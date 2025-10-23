@@ -1,0 +1,691 @@
+---
+alwaysApply: false
+---
+# Accessibility & SEO Best Practices
+
+## Accessibility (WCAG 2.1 AA Compliance)
+
+### 1. Semantic HTML Structure
+```svelte
+<!-- src/routes/+layout.svelte -->
+<header role="banner">
+  <nav role="navigation" aria-label="Main navigation">
+    <ul>
+      <li><a href="/" aria-current="page">Home</a></li>
+      <li><a href="/features">Features</a></li>
+      <li><a href="/pricing">Pricing</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main role="main">
+  <slot />
+</main>
+
+<footer role="contentinfo">
+  <p>&copy; 2024 Morr.ai. All rights reserved.</p>
+</footer>
+```
+
+### 2. ARIA Labels and Descriptions
+```svelte
+<!-- src/lib/components/Modal.svelte -->
+<script lang="ts">
+  interface Props {
+    isOpen: boolean;
+    title: string;
+    onClose: () => void;
+  }
+  
+  let { isOpen, title, onClose }: Props = $props();
+  
+  let modalElement: HTMLElement;
+  let previousActiveElement: HTMLElement;
+  
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      onClose();
+    }
+  }
+  
+  function trapFocus(event: KeyboardEvent) {
+    if (event.key === 'Tab') {
+      const focusableElements = modalElement.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+      
+      if (event.shiftKey) {
+        if (document.activeElement === firstElement) {
+          lastElement.focus();
+          event.preventDefault();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          firstElement.focus();
+          event.preventDefault();
+        }
+      }
+    }
+  }
+</script>
+
+{#if isOpen}
+  <div 
+    class="modal-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-title"
+    aria-describedby="modal-description"
+    on:keydown={handleKeydown}
+    on:keydown={trapFocus}
+  >
+    <div bind:this={modalElement} class="modal-content">
+      <h2 id="modal-title">{title}</h2>
+      <p id="modal-description">Modal content goes here</p>
+      
+      <button 
+        on:click={onClose}
+        aria-label="Close modal"
+        class="close-button"
+      >
+        ×
+      </button>
+      
+      <slot />
+    </div>
+  </div>
+{/if}
+```
+
+### 3. Form Accessibility
+```svelte
+<!-- src/lib/components/ContactForm.svelte -->
+<script lang="ts">
+  let formData = $state({
+    name: '',
+    email: '',
+    message: ''
+  });
+  
+  let errors = $state<Record<string, string>>({});
+  let isSubmitting = $state(false);
+  
+  function validateForm() {
+    const newErrors: Record<string, string> = {};
+    
+    if (!formData.name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+    
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+    
+    if (!formData.message.trim()) {
+      newErrors.message = 'Message is required';
+    }
+    
+    errors = newErrors;
+    return Object.keys(newErrors).length === 0;
+  }
+  
+  async function handleSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    
+    if (!validateForm()) return;
+    
+    isSubmitting = true;
+    try {
+      // Submit form
+    } finally {
+      isSubmitting = false;
+    }
+  }
+</script>
+
+<form on:submit={handleSubmit} novalidate>
+  <fieldset>
+    <legend>Contact Information</legend>
+    
+    <div class="form-group">
+      <label for="name" class="required">Name</label>
+      <input
+        id="name"
+        type="text"
+        bind:value={formData.name}
+        aria-describedby={errors.name ? 'name-error' : undefined}
+        aria-invalid={!!errors.name}
+        required
+        class="form-input"
+      />
+      {#if errors.name}
+        <div id="name-error" class="error-message" role="alert">
+          {errors.name}
+        </div>
+      {/if}
+    </div>
+    
+    <div class="form-group">
+      <label for="email" class="required">Email</label>
+      <input
+        id="email"
+        type="email"
+        bind:value={formData.email}
+        aria-describedby={errors.email ? 'email-error' : undefined}
+        aria-invalid={!!errors.email}
+        required
+        class="form-input"
+      />
+      {#if errors.email}
+        <div id="email-error" class="error-message" role="alert">
+          {errors.email}
+        </div>
+      {/if}
+    </div>
+    
+    <div class="form-group">
+      <label for="message" class="required">Message</label>
+      <textarea
+        id="message"
+        bind:value={formData.message}
+        aria-describedby={errors.message ? 'message-error' : undefined}
+        aria-invalid={!!errors.message}
+        required
+        rows="5"
+        class="form-textarea"
+      ></textarea>
+      {#if errors.message}
+        <div id="message-error" class="error-message" role="alert">
+          {errors.message}
+        </div>
+      {/if}
+    </div>
+    
+    <button 
+      type="submit" 
+      disabled={isSubmitting}
+      aria-describedby="submit-help"
+    >
+      {isSubmitting ? 'Sending...' : 'Send Message'}
+    </button>
+    
+    <div id="submit-help" class="help-text">
+      All fields marked with * are required
+    </div>
+  </fieldset>
+</form>
+```
+
+### 4. Keyboard Navigation
+```svelte
+<!-- src/lib/components/Tabs.svelte -->
+<script lang="ts">
+  interface Tab {
+    id: string;
+    label: string;
+    content: any;
+  }
+  
+  interface Props {
+    tabs: Tab[];
+    defaultTab?: string;
+  }
+  
+  let { tabs, defaultTab = tabs[0]?.id }: Props = $props();
+  
+  let activeTab = $state(defaultTab);
+  let tabList: HTMLElement;
+  
+  function handleKeydown(event: KeyboardEvent) {
+    const currentIndex = tabs.findIndex(tab => tab.id === activeTab);
+    let newIndex = currentIndex;
+    
+    switch (event.key) {
+      case 'ArrowLeft':
+        newIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+        break;
+      case 'ArrowRight':
+        newIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+        break;
+      case 'Home':
+        newIndex = 0;
+        break;
+      case 'End':
+        newIndex = tabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    
+    event.preventDefault();
+    activeTab = tabs[newIndex].id;
+    
+    // Focus the new tab button
+    const newTabButton = tabList.querySelector(`[data-tab="${activeTab}"]`) as HTMLElement;
+    newTabButton?.focus();
+  }
+</script>
+
+<div class="tabs" role="tablist" bind:this={tabList} on:keydown={handleKeydown}>
+  {#each tabs as tab}
+    <button
+      role="tab"
+      aria-selected={activeTab === tab.id}
+      aria-controls={`panel-${tab.id}`}
+      data-tab={tab.id}
+      on:click={() => activeTab = tab.id}
+      class="tab-button"
+    >
+      {tab.label}
+    </button>
+  {/each}
+</div>
+
+{#each tabs as tab}
+  <div
+    role="tabpanel"
+    id={`panel-${tab.id}`}
+    aria-labelledby={`tab-${tab.id}`}
+    hidden={activeTab !== tab.id}
+    class="tab-panel"
+  >
+    {tab.content}
+  </div>
+{/each}
+```
+
+## SEO Optimization
+
+### 1. Meta Tags and Structured Data
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+  import type { PageData } from './$types';
+  
+  export let data: PageData;
+  
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Morr.ai",
+    "description": "AI-powered sales intelligence platform",
+    "url": "https://morr.ai",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "99",
+      "priceCurrency": "USD",
+      "priceValidUntil": "2024-12-31"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.8",
+      "ratingCount": "150"
+    }
+  };
+</script>
+
+<svelte:head>
+  <title>Morr.ai - AI-Powered Sales Intelligence Platform</title>
+  <meta name="description" content="Transform your sales process with AI-driven insights, automation, and intelligent decision support. Boost conversion rates by 40% with Morr.ai." />
+  <meta name="keywords" content="AI sales, sales intelligence, sales automation, CRM, lead generation" />
+  
+  <!-- Open Graph -->
+  <meta property="og:title" content="Morr.ai - AI-Powered Sales Intelligence Platform" />
+  <meta property="og:description" content="Transform your sales process with AI-driven insights and automation." />
+  <meta property="og:image" content="https://morr.ai/og-image.jpg" />
+  <meta property="og:url" content="https://morr.ai" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Morr.ai" />
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Morr.ai - AI-Powered Sales Intelligence" />
+  <meta name="twitter:description" content="Transform your sales process with AI-driven insights." />
+  <meta name="twitter:image" content="https://morr.ai/twitter-image.jpg" />
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://morr.ai" />
+  
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+    {JSON.stringify(structuredData)}
+  </script>
+</svelte:head>
+
+<main>
+  <!-- Page content -->
+</main>
+```
+
+### 2. Dynamic Meta Tags
+```typescript
+// src/routes/+layout.ts
+import type { LayoutLoad } from './$types';
+
+export const load: LayoutLoad = async ({ url }) => {
+  const baseUrl = 'https://morr.ai';
+  const currentUrl = `${baseUrl}${url.pathname}`;
+  
+  return {
+    seo: {
+      baseUrl,
+      currentUrl,
+      siteName: 'Morr.ai',
+      defaultTitle: 'Morr.ai - AI-Powered Sales Intelligence',
+      defaultDescription: 'Transform your sales process with AI-driven insights and automation.',
+      defaultImage: `${baseUrl}/og-image.jpg`
+    }
+  };
+};
+```
+
+### 3. Sitemap Generation
+```typescript
+// src/routes/sitemap.xml/+server.ts
+import type { RequestHandler } from './$types';
+
+const staticPages = [
+  '',
+  '/features',
+  '/pricing',
+  '/about',
+  '/contact',
+  '/privacy',
+  '/terms'
+];
+
+export const GET: RequestHandler = async () => {
+  const baseUrl = 'https://morr.ai';
+  const currentDate = new Date().toISOString();
+  
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  ${staticPages.map(page => `
+    <url>
+      <loc>${baseUrl}${page}</loc>
+      <lastmod>${currentDate}</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>${page === '' ? '1.0' : '0.8'}</priority>
+    </url>
+  `).join('')}
+</urlset>`;
+
+  return new Response(sitemap, {
+    headers: {
+      'Content-Type': 'application/xml',
+      'Cache-Control': 'public, max-age=3600'
+    }
+  });
+};
+```
+
+### 4. Robots.txt
+```typescript
+// src/routes/robots.txt/+server.ts
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async () => {
+  const robots = `User-agent: *
+Allow: /
+
+Sitemap: https://morr.ai/sitemap.xml`;
+
+  return new Response(robots, {
+    headers: {
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'public, max-age=86400'
+    }
+  });
+};
+```
+
+## Performance & SEO Integration
+
+### 1. Critical CSS Inlining
+```svelte
+<!-- src/app.html -->
+<head>
+  <style>
+    /* Critical above-the-fold styles */
+    .hero {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+    
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 4rem);
+      font-weight: 700;
+      color: white;
+      line-height: 1.2;
+    }
+  </style>
+</head>
+```
+
+### 2. Image SEO
+```svelte
+<!-- src/lib/components/SEOImage.svelte -->
+<script lang="ts">
+  interface Props {
+    src: string;
+    alt: string;
+    title?: string;
+    width?: number;
+    height?: number;
+    loading?: 'lazy' | 'eager';
+  }
+  
+  let { 
+    src, 
+    alt, 
+    title, 
+    width, 
+    height, 
+    loading = 'lazy' 
+  }: Props = $props();
+</script>
+
+<img
+  {src}
+  {alt}
+  {title}
+  {width}
+  {height}
+  {loading}
+  decoding="async"
+  class="seo-image"
+/>
+```
+
+### 3. Schema Markup for Content
+```svelte
+<!-- src/lib/sections/Testimonials.svelte -->
+<script lang="ts">
+  import type { Testimonial } from '$lib/content/types';
+  
+  interface Props {
+    testimonials: Testimonial[];
+  }
+  
+  let { testimonials }: Props = $props();
+  
+  const testimonialSchema = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "itemListElement": testimonials.map((testimonial, index) => ({
+      "@type": "Review",
+      "position": index + 1,
+      "author": {
+        "@type": "Person",
+        "name": testimonial.name
+      },
+      "reviewBody": testimonial.content,
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": testimonial.rating || 5
+      }
+    }))
+  };
+</script>
+
+<svelte:head>
+  <script type="application/ld+json">
+    {JSON.stringify(testimonialSchema)}
+  </script>
+</svelte:head>
+
+<section class="testimonials" aria-labelledby="testimonials-heading">
+  <h2 id="testimonials-heading">What Our Customers Say</h2>
+  
+  <div class="testimonials-grid">
+    {#each testimonials as testimonial}
+      <article class="testimonial" itemscope itemtype="https://schema.org/Review">
+        <div itemprop="reviewBody">
+          <p>"{testimonial.content}"</p>
+        </div>
+        
+        <footer class="testimonial-author">
+          <div itemprop="author" itemscope itemtype="https://schema.org/Person">
+            <strong itemprop="name">{testimonial.name}</strong>
+            <span itemprop="jobTitle">{testimonial.role}</span>
+            <span itemprop="worksFor">{testimonial.company}</span>
+          </div>
+          
+          {#if testimonial.rating}
+            <div itemprop="reviewRating" itemscope itemtype="https://schema.org/Rating">
+              <meta itemprop="ratingValue" content={testimonial.rating} />
+              <meta itemprop="bestRating" content="5" />
+              <div class="rating" aria-label={`${testimonial.rating} out of 5 stars`}>
+                {#each Array(testimonial.rating) as _}
+                  <span aria-hidden="true">★</span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </footer>
+      </article>
+    {/each}
+  </div>
+</section>
+```
+
+## Analytics & Tracking
+
+### 1. Privacy-Compliant Analytics
+```typescript
+// src/lib/utils/analytics.ts
+export function trackPageView(url: string, title: string) {
+  if (typeof window === 'undefined') return;
+  
+  // Google Analytics 4
+  if (window.gtag) {
+    window.gtag('config', 'GA_MEASUREMENT_ID', {
+      page_title: title,
+      page_location: url
+    });
+  }
+}
+
+export function trackEvent(eventName: string, parameters: Record<string, any>) {
+  if (typeof window === 'undefined') return;
+  
+  if (window.gtag) {
+    window.gtag('event', eventName, parameters);
+  }
+}
+
+export function trackConversion(conversionId: string, value?: number) {
+  if (typeof window === 'undefined') return;
+  
+  if (window.gtag) {
+    window.gtag('event', 'conversion', {
+      send_to: conversionId,
+      value: value
+    });
+  }
+}
+```
+
+### 2. Cookie Consent
+```svelte
+<!-- src/lib/components/CookieConsent.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  
+  let showBanner = $state(false);
+  let consentGiven = $state(false);
+  
+  onMount(() => {
+    if (browser) {
+      const consent = localStorage.getItem('cookie-consent');
+      if (!consent) {
+        showBanner = true;
+      } else {
+        consentGiven = consent === 'accepted';
+      }
+    }
+  });
+  
+  function acceptCookies() {
+    localStorage.setItem('cookie-consent', 'accepted');
+    consentGiven = true;
+    showBanner = false;
+    
+    // Initialize analytics
+    initializeAnalytics();
+  }
+  
+  function declineCookies() {
+    localStorage.setItem('cookie-consent', 'declined');
+    consentGiven = false;
+    showBanner = false;
+  }
+  
+  function initializeAnalytics() {
+    // Load analytics scripts
+    const script = document.createElement('script');
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID';
+    document.head.appendChild(script);
+  }
+</script>
+
+{#if showBanner}
+  <div 
+    class="cookie-banner"
+    role="banner"
+    aria-labelledby="cookie-heading"
+  >
+    <div class="cookie-content">
+      <h3 id="cookie-heading">Cookie Preferences</h3>
+      <p>
+        We use cookies to improve your experience and analyze our traffic. 
+        By clicking "Accept", you consent to our use of cookies.
+      </p>
+      
+      <div class="cookie-actions">
+        <button 
+          on:click={acceptCookies}
+          class="btn-primary"
+        >
+          Accept All
+        </button>
+        <button 
+          on:click={declineCookies}
+          class="btn-secondary"
+        >
+          Decline
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+```

@@ -1,0 +1,549 @@
+---
+alwaysApply: false
+---
+# TypeScript Patterns for SvelteKit Landing Pages
+
+## Type Safety Best Practices
+
+### 1. Component Props Interface Design
+```typescript
+// src/lib/ui/Button.svelte
+interface ButtonProps {
+  variant: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  loading?: boolean;
+  href?: string;
+  target?: '_blank' | '_self' | '_parent' | '_top';
+  onClick?: (event: MouseEvent) => void;
+  class?: string;
+  children?: any; // For slot content
+}
+
+// Usage with proper typing
+let { 
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  href,
+  target,
+  onClick,
+  class: className = '',
+  children,
+  ...restProps 
+}: ButtonProps = $props();
+```
+
+### 2. Content Data Types
+```typescript
+// src/lib/content/types.ts
+export interface NavItem {
+  label: string;
+  href: string;
+  external?: boolean;
+  children?: NavItem[];
+}
+
+export interface Feature {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  benefits: string[];
+}
+
+export interface PricingPlan {
+  id: string;
+  name: string;
+  price: {
+    monthly: number;
+    yearly: number;
+  };
+  features: string[];
+  cta: {
+    text: string;
+    href: string;
+  };
+  popular?: boolean;
+}
+
+export interface Testimonial {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  content: string;
+  avatar?: string;
+  rating?: number;
+}
+```
+
+### 3. API Response Types
+```typescript
+// src/lib/types/api.ts
+export interface ApiResponse<T> {
+  data: T;
+  success: boolean;
+  message?: string;
+  errors?: string[];
+}
+
+export interface ContactFormData {
+  name: string;
+  email: string;
+  company?: string;
+  message: string;
+  source?: string;
+}
+
+export interface NewsletterSubscription {
+  email: string;
+  source: string;
+  consent: boolean;
+}
+
+// API endpoint types
+export interface ContactFormResponse extends ApiResponse<{ id: string }> {}
+export interface NewsletterResponse extends ApiResponse<{ subscribed: boolean }> {}
+```
+
+## Svelte 5 Runes & TypeScript
+
+### 1. State Management with Runes
+```typescript
+// src/lib/store/theme.ts
+import { browser } from '$app/environment';
+
+type Theme = 'light' | 'dark' | 'system';
+
+interface ThemeState {
+  theme: Theme;
+  resolved: 'light' | 'dark';
+}
+
+export const theme = $state<ThemeState>({
+  theme: 'system',
+  resolved: 'light'
+});
+
+export function setTheme(newTheme: Theme) {
+  theme.theme = newTheme;
+  updateResolvedTheme();
+}
+
+function updateResolvedTheme() {
+  if (!browser) return;
+  
+  if (theme.theme === 'system') {
+    theme.resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } else {
+    theme.resolved = theme.theme;
+  }
+  
+  // Apply theme to document
+  document.documentElement.classList.toggle('dark', theme.resolved === 'dark');
+}
+
+// Initialize theme on mount
+if (browser) {
+  updateResolvedTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateResolvedTheme);
+}
+```
+
+### 2. Component State with Runes
+```svelte
+<!-- src/lib/sections/Hero.svelte -->
+<script lang="ts">
+  import type { HeroContent } from '$lib/content/types';
+  
+  interface Props {
+    content: HeroContent;
+    autoplay?: boolean;
+  }
+  
+  let { content, autoplay = true }: Props = $props();
+  
+  // Local state with runes
+  let isVisible = $state(false);
+  let currentSlide = $state(0);
+  let isPlaying = $state(autoplay);
+  
+  // Derived state
+  let currentContent = $derived(content.slides[currentSlide]);
+  
+  // Actions
+  function nextSlide() {
+    currentSlide = (currentSlide + 1) % content.slides.length;
+  }
+  
+  function prevSlide() {
+    currentSlide = currentSlide === 0 ? content.slides.length - 1 : currentSlide - 1;
+  }
+  
+  function toggleAutoplay() {
+    isPlaying = !isPlaying;
+  }
+</script>
+```
+
+## Form Handling & Validation
+
+### 1. Form Types & Validation
+```typescript
+// src/lib/utils/validation.ts
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+}
+
+export function validateEmail(email: string): ValidationError | null {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { field: 'email', message: 'Please enter a valid email address' };
+  }
+  return null;
+}
+
+export function validateRequired(value: string, fieldName: string): ValidationError | null {
+  if (!value.trim()) {
+    return { field: fieldName, message: `${fieldName} is required` };
+  }
+  return null;
+}
+
+export function validateForm<T extends Record<string, any>>(
+  data: T,
+  rules: Partial<Record<keyof T, (value: any) => ValidationError | null>>
+): ValidationResult {
+  const errors: ValidationError[] = [];
+  
+  for (const [field, validator] of Object.entries(rules)) {
+    if (validator) {
+      const error = validator(data[field]);
+      if (error) errors.push(error);
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+```
+
+### 2. Form Component with TypeScript
+```svelte
+<!-- src/lib/components/ContactForm.svelte -->
+<script lang="ts">
+  import type { ContactFormData, ValidationResult } from '$lib/types';
+  import { validateForm, validateEmail, validateRequired } from '$lib/utils/validation';
+  
+  interface Props {
+    onSubmit: (data: ContactFormData) => Promise<void>;
+  }
+  
+  let { onSubmit }: Props = $props();
+  
+  let formData = $state<ContactFormData>({
+    name: '',
+    email: '',
+    company: '',
+    message: '',
+    source: 'landing-page'
+  });
+  
+  let validation = $state<ValidationResult>({ isValid: true, errors: [] });
+  let isSubmitting = $state(false);
+  let submitError = $state<string | null>(null);
+  
+  async function handleSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    
+    // Validate form
+    validation = validateForm(formData, {
+      name: (value) => validateRequired(value, 'Name'),
+      email: (value) => validateEmail(value) || validateRequired(value, 'Email'),
+      message: (value) => validateRequired(value, 'Message')
+    });
+    
+    if (!validation.isValid) return;
+    
+    try {
+      isSubmitting = true;
+      submitError = null;
+      await onSubmit(formData);
+      
+      // Reset form on success
+      formData = {
+        name: '',
+        email: '',
+        company: '',
+        message: '',
+        source: 'landing-page'
+      };
+    } catch (error) {
+      submitError = error instanceof Error ? error.message : 'An error occurred';
+    } finally {
+      isSubmitting = false;
+    }
+  }
+</script>
+
+<form on:submit={handleSubmit} class="space-y-4">
+  <div>
+    <label for="name" class="block text-sm font-medium text-gray-700">Name *</label>
+    <input
+      id="name"
+      type="text"
+      bind:value={formData.name}
+      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+      required
+    />
+    {#if validation.errors.find(e => e.field === 'name')}
+      <p class="mt-1 text-sm text-red-600">{validation.errors.find(e => e.field === 'name')?.message}</p>
+    {/if}
+  </div>
+  
+  <!-- Other form fields -->
+  
+  {#if submitError}
+    <div class="rounded-md bg-red-50 p-4">
+      <p class="text-sm text-red-800">{submitError}</p>
+    </div>
+  {/if}
+  
+  <button
+    type="submit"
+    disabled={isSubmitting}
+    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+  >
+    {isSubmitting ? 'Sending...' : 'Send Message'}
+  </button>
+</form>
+```
+
+## API Integration Types
+
+### 1. Server Actions with Types
+```typescript
+// src/routes/api/contact/+server.ts
+import type { RequestHandler } from './$types';
+import type { ContactFormData, ContactFormResponse } from '$lib/types/api';
+
+export const POST: RequestHandler = async ({ request }) => {
+  try {
+    const data: ContactFormData = await request.json();
+    
+    // Validate data
+    if (!data.name || !data.email || !data.message) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: 'Missing required fields',
+          errors: ['name', 'email', 'message'].filter(field => !data[field as keyof ContactFormData])
+        } as ContactFormResponse),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Process form submission
+    const result = await processContactForm(data);
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { id: result.id },
+        message: 'Thank you for your message!'
+      } as ContactFormResponse),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        message: 'Internal server error'
+      } as ContactFormResponse),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+};
+```
+
+### 2. Client-Side API Calls
+```typescript
+// src/lib/utils/api.ts
+export async function submitContactForm(data: ContactFormData): Promise<ContactFormResponse> {
+  const response = await fetch('/api/contact', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  
+  return response.json();
+}
+
+export async function subscribeNewsletter(email: string, source: string): Promise<NewsletterResponse> {
+  const response = await fetch('/api/newsletter', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email, source, consent: true })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  
+  return response.json();
+}
+```
+
+## Error Handling & Type Safety
+
+### 1. Error Types
+```typescript
+// src/lib/types/errors.ts
+export class AppError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public statusCode: number = 500
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+export class ValidationError extends AppError {
+  constructor(message: string, public field: string) {
+    super(message, 'VALIDATION_ERROR', 400);
+  }
+}
+
+export class NetworkError extends AppError {
+  constructor(message: string = 'Network error occurred') {
+    super(message, 'NETWORK_ERROR', 0);
+  }
+}
+```
+
+### 2. Error Boundary Component
+```svelte
+<!-- src/lib/components/ErrorBoundary.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import type { AppError } from '$lib/types/errors';
+  
+  interface Props {
+    fallback?: (error: AppError) => any;
+  }
+  
+  let { fallback }: Props = $props();
+  
+  let error = $state<AppError | null>(null);
+  
+  onMount(() => {
+    const handleError = (event: ErrorEvent) => {
+      error = new AppError(event.message, 'UNKNOWN_ERROR');
+    };
+    
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  });
+  
+  function reset() {
+    error = null;
+  }
+</script>
+
+{#if error}
+  {#if fallback}
+    {@render fallback(error)}
+  {:else}
+    <div class="error-fallback p-4 bg-red-50 border border-red-200 rounded-md">
+      <h3 class="text-lg font-medium text-red-800">Something went wrong</h3>
+      <p class="text-red-600">{error.message}</p>
+      <button 
+        on:click={reset}
+        class="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded text-sm hover:bg-red-200"
+      >
+        Try Again
+      </button>
+    </div>
+  {/if}
+{:else}
+  <slot />
+{/if}
+```
+
+## Utility Types & Helpers
+
+### 1. Common Utility Types
+```typescript
+// src/lib/types/utils.ts
+export type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+export type RequiredFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+// Form field types
+export type FormField<T> = {
+  value: T;
+  error?: string;
+  touched: boolean;
+};
+
+export type FormState<T extends Record<string, any>> = {
+  [K in keyof T]: FormField<T[K]>;
+};
+
+// API response helpers
+export type ApiSuccess<T> = {
+  success: true;
+  data: T;
+  message?: string;
+};
+
+export type ApiError = {
+  success: false;
+  message: string;
+  errors?: string[];
+};
+
+export type ApiResult<T> = ApiSuccess<T> | ApiError;
+```
+
+### 2. Type Guards
+```typescript
+// src/lib/utils/type-guards.ts
+export function isApiSuccess<T>(response: ApiResult<T>): response is ApiSuccess<T> {
+  return response.success === true;
+}
+
+export function isApiError<T>(response: ApiResult<T>): response is ApiError {
+  return response.success === false;
+}
+
+export function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+export function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && !isNaN(value);
+}
+```

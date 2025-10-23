@@ -1,0 +1,568 @@
+---
+alwaysApply: false
+---
+# Performance Optimization for SvelteKit Landing Pages
+
+## Core Web Vitals Optimization
+
+### 1. Largest Contentful Paint (LCP) Optimization
+```svelte
+<!-- src/lib/sections/Hero.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  
+  let imageLoaded = $state(false);
+  let heroImage: HTMLImageElement;
+  
+  onMount(() => {
+    if (browser && heroImage) {
+      // Preload critical hero image
+      const img = new Image();
+      img.onload = () => {
+        imageLoaded = true;
+      };
+      img.src = '/images/hero-optimized.webp';
+    }
+  });
+</script>
+
+<!-- Critical above-the-fold content -->
+<section class="hero-section">
+  <div class="hero-content">
+    <h1 class="text-4xl md:text-6xl font-bold">Your Hero Title</h1>
+    <p class="text-xl mt-4">Compelling subtitle</p>
+  </div>
+  
+  <!-- Lazy load hero image -->
+  {#if imageLoaded}
+    <img 
+      bind:this={heroImage}
+      src="/images/hero-optimized.webp"
+      alt="Hero image"
+      class="hero-image"
+      loading="eager"
+      fetchpriority="high"
+    />
+  {/if}
+</section>
+
+<style>
+  .hero-section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+</style>
+```
+
+### 2. First Input Delay (FID) Optimization
+```svelte
+<!-- src/lib/components/InteractiveButton.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  let isReady = $state(false);
+  let buttonElement: HTMLButtonElement;
+  
+  onMount(() => {
+    // Ensure button is ready for interaction
+    if (buttonElement) {
+      buttonElement.focus();
+      isReady = true;
+    }
+  });
+  
+  function handleClick() {
+    if (!isReady) return;
+    
+    // Use requestIdleCallback for non-critical work
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        // Heavy computation here
+        processClick();
+      });
+    } else {
+      setTimeout(processClick, 0);
+    }
+  }
+  
+  function processClick() {
+    // Button click logic
+  }
+</script>
+
+<button 
+  bind:this={buttonElement}
+  on:click={handleClick}
+  class="btn-primary"
+  disabled={!isReady}
+>
+  <slot />
+</button>
+```
+
+### 3. Cumulative Layout Shift (CLS) Prevention
+```svelte
+<!-- src/lib/components/Image.svelte -->
+<script lang="ts">
+  interface Props {
+    src: string;
+    alt: string;
+    width?: number;
+    height?: number;
+    class?: string;
+  }
+  
+  let { src, alt, width, height, class: className = '' }: Props = $props();
+  
+  let loaded = $state(false);
+  let imageElement: HTMLImageElement;
+  
+  function handleLoad() {
+    loaded = true;
+  }
+</script>
+
+<div 
+  class="image-container {className}"
+  style="aspect-ratio: {width}/{height};"
+>
+  {#if !loaded}
+    <!-- Placeholder to prevent CLS -->
+    <div 
+      class="image-placeholder bg-gray-200 animate-pulse"
+      style="width: 100%; height: 100%;"
+    ></div>
+  {/if}
+  
+  <img
+    bind:this={imageElement}
+    {src}
+    {alt}
+    {width}
+    {height}
+    class="image {loaded ? 'opacity-100' : 'opacity-0'}"
+    on:load={handleLoad}
+    loading="lazy"
+    decoding="async"
+  />
+</div>
+
+<style>
+  .image-container {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity 0.3s ease;
+  }
+</style>
+```
+
+## Code Splitting & Lazy Loading
+
+### 1. Route-Based Code Splitting
+```typescript
+// src/routes/+layout.ts
+import type { LayoutLoad } from './$types';
+
+export const load: LayoutLoad = async () => {
+  // Lazy load non-critical components
+  const [Analytics, CookieConsent] = await Promise.all([
+    import('$lib/components/Analytics.svelte'),
+    import('$lib/components/CookieConsent.svelte')
+  ]);
+  
+  return {
+    Analytics: Analytics.default,
+    CookieConsent: CookieConsent.default
+  };
+};
+```
+
+### 2. Component-Level Lazy Loading
+```svelte
+<!-- src/lib/sections/Features.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  
+  let isVisible = $state(false);
+  let HeavyComponent: any;
+  let sectionElement: HTMLElement;
+  
+  onMount(() => {
+    if (!browser) return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && !HeavyComponent) {
+            loadHeavyComponent();
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: '50px' }
+    );
+    
+    if (sectionElement) {
+      observer.observe(sectionElement);
+    }
+  });
+  
+  async function loadHeavyComponent() {
+    const module = await import('$lib/components/HeavyFeature.svelte');
+    HeavyComponent = module.default;
+    isVisible = true;
+  }
+</script>
+
+<section bind:this={sectionElement} class="features-section">
+  <h2>Features</h2>
+  
+  <!-- Lightweight content loads immediately -->
+  <div class="features-grid">
+    <!-- Basic feature cards -->
+  </div>
+  
+  <!-- Heavy component loads when visible -->
+  {#if HeavyComponent && isVisible}
+    <svelte:component this={HeavyComponent} />
+  {/if}
+</section>
+```
+
+### 3. Dynamic Imports for Heavy Libraries
+```typescript
+// src/lib/utils/analytics.ts
+let analytics: any = null;
+
+export async function trackEvent(event: string, data: any) {
+  if (!analytics) {
+    const { default: Analytics } = await import('analytics');
+    analytics = new Analytics();
+  }
+  
+  analytics.track(event, data);
+}
+
+// Usage in components
+export async function loadAnalytics() {
+  if (browser && !analytics) {
+    const { default: Analytics } = await import('analytics');
+    analytics = new Analytics();
+  }
+}
+```
+
+## Image Optimization
+
+### 1. Responsive Images with WebP
+```svelte
+<!-- src/lib/components/OptimizedImage.svelte -->
+<script lang="ts">
+  interface Props {
+    src: string;
+    alt: string;
+    sizes?: string;
+    class?: string;
+    priority?: boolean;
+  }
+  
+  let { 
+    src, 
+    alt, 
+    sizes = '100vw', 
+    class: className = '',
+    priority = false 
+  }: Props = $props();
+  
+  // Generate responsive image sources
+  const generateSrcSet = (baseSrc: string) => {
+    const widths = [320, 640, 768, 1024, 1280, 1920];
+    return widths
+      .map(width => `${baseSrc}?w=${width}&q=80 ${width}w`)
+      .join(', ');
+  };
+  
+  const webpSrc = src.replace(/\.(jpg|jpeg|png)$/, '.webp');
+  const fallbackSrc = src;
+</script>
+
+<picture class={className}>
+  <!-- WebP format for modern browsers -->
+  <source 
+    srcset={generateSrcSet(webpSrc)} 
+    sizes={sizes}
+    type="image/webp"
+  />
+  
+  <!-- Fallback for older browsers -->
+  <img
+    src={fallbackSrc}
+    srcset={generateSrcSet(fallbackSrc)}
+    sizes={sizes}
+    {alt}
+    loading={priority ? 'eager' : 'lazy'}
+    decoding="async"
+    fetchpriority={priority ? 'high' : 'auto'}
+  />
+</picture>
+```
+
+### 2. Image Preloading Strategy
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  
+  onMount(() => {
+    if (browser) {
+      // Preload critical images
+      const criticalImages = [
+        '/images/hero.webp',
+        '/images/logo.svg'
+      ];
+      
+      criticalImages.forEach(src => {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = src;
+        document.head.appendChild(link);
+      });
+    }
+  });
+</script>
+```
+
+## Bundle Optimization
+
+### 1. Tree Shaking Configuration
+```typescript
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['svelte'],
+          ui: ['$lib/ui'],
+          utils: ['$lib/utils']
+        }
+      }
+    }
+  },
+  optimizeDeps: {
+    include: ['svelte']
+  }
+});
+```
+
+### 2. Dynamic Imports for Third-Party Libraries
+```typescript
+// src/lib/utils/third-party.ts
+export async function loadChartLibrary() {
+  const { Chart } = await import('chart.js');
+  return Chart;
+}
+
+export async function loadAnimationLibrary() {
+  const { gsap } = await import('gsap');
+  return gsap;
+}
+
+// Usage in components
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  let chartInstance: any;
+  
+  onMount(async () => {
+    const Chart = await loadChartLibrary();
+    // Use Chart library
+  });
+</script>
+```
+
+## Caching Strategies
+
+### 1. Service Worker for Caching
+```typescript
+// src/service-worker.ts
+import { build, files, version } from '$service-worker';
+
+const CACHE = `cache-${version}`;
+const ASSETS = [
+  ...files,
+  ...build
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => {
+      return cache.addAll(ASSETS);
+    })
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) {
+        return cached;
+      }
+      
+      return fetch(event.request).then((response) => {
+        if (response.status === 200) {
+          const cache = caches.open(CACHE);
+          cache.then((c) => c.put(event.request, response.clone()));
+        }
+        return response;
+      });
+    })
+  );
+});
+```
+
+### 2. HTTP Caching Headers
+```typescript
+// src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit';
+
+export const handle: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+  
+  // Set cache headers for static assets
+  if (event.url.pathname.startsWith('/_app/')) {
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+  
+  // Set cache headers for images
+  if (event.url.pathname.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
+    response.headers.set('Cache-Control', 'public, max-age=31536000');
+  }
+  
+  return response;
+};
+```
+
+## Performance Monitoring
+
+### 1. Core Web Vitals Tracking
+```typescript
+// src/lib/utils/performance.ts
+export function trackWebVitals() {
+  if (typeof window === 'undefined') return;
+  
+  // Track LCP
+  new PerformanceObserver((list) => {
+    const entries = list.getEntries();
+    const lastEntry = entries[entries.length - 1];
+    
+    console.log('LCP:', lastEntry.startTime);
+  }).observe({ entryTypes: ['largest-contentful-paint'] });
+  
+  // Track FID
+  new PerformanceObserver((list) => {
+    const entries = list.getEntries();
+    entries.forEach((entry) => {
+      console.log('FID:', entry.processingStart - entry.startTime);
+    });
+  }).observe({ entryTypes: ['first-input'] });
+  
+  // Track CLS
+  let clsValue = 0;
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (!entry.hadRecentInput) {
+        clsValue += entry.value;
+      }
+    }
+    console.log('CLS:', clsValue);
+  }).observe({ entryTypes: ['layout-shift'] });
+}
+```
+
+### 2. Bundle Analysis
+```typescript
+// src/lib/utils/bundle-analyzer.ts
+export function analyzeBundle() {
+  if (typeof window === 'undefined') return;
+  
+  // Log bundle size information
+  const scripts = document.querySelectorAll('script[src]');
+  scripts.forEach((script) => {
+    const src = script.getAttribute('src');
+    if (src?.includes('_app/')) {
+      fetch(src)
+        .then(response => response.blob())
+        .then(blob => {
+          console.log(`Bundle: ${src}, Size: ${blob.size} bytes`);
+        });
+    }
+  });
+}
+```
+
+## Critical Resource Optimization
+
+### 1. Critical CSS Inlining
+```svelte
+<!-- src/app.html -->
+<head>
+  <style>
+    /* Critical above-the-fold styles */
+    .hero {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+    
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+```
+
+### 2. Font Loading Optimization
+```svelte
+<!-- src/routes/+layout.svelte -->
+<svelte:head>
+  <link 
+    rel="preconnect" 
+    href="https://fonts.googleapis.com"
+  />
+  <link 
+    rel="preconnect" 
+    href="https://fonts.gstatic.com" 
+    crossorigin
+  />
+  <link 
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" 
+    rel="stylesheet"
+  />
+</svelte:head>
+```

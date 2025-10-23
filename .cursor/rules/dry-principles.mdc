@@ -1,0 +1,669 @@
+---
+alwaysApply: true
+description: DRY principles and code reusability patterns for SvelteKit landing pages
+---
+
+# DRY Principles & Code Reusability
+
+## Component Composition Patterns
+
+### 1. Base Component Architecture
+```svelte
+<!-- src/lib/ui/BaseCard.svelte -->
+<script lang="ts">
+  interface BaseCardProps {
+    variant?: 'default' | 'elevated' | 'outlined';
+    padding?: 'none' | 'sm' | 'md' | 'lg';
+    rounded?: 'none' | 'sm' | 'md' | 'lg';
+    class?: string;
+  }
+  
+  let { 
+    variant = 'default',
+    padding = 'md',
+    rounded = 'md',
+    class: className = '',
+    ...restProps 
+  }: BaseCardProps = $props();
+  
+  const variantClasses = {
+    default: 'bg-white border border-gray-200',
+    elevated: 'bg-white shadow-md',
+    outlined: 'bg-transparent border-2 border-gray-300'
+  };
+  
+  const paddingClasses = {
+    none: '',
+    sm: 'p-3',
+    md: 'p-6',
+    lg: 'p-8'
+  };
+  
+  const roundedClasses = {
+    none: '',
+    sm: 'rounded-sm',
+    md: 'rounded-md',
+    lg: 'rounded-lg'
+  };
+  
+  $: classes = `
+    ${variantClasses[variant]} 
+    ${paddingClasses[padding]} 
+    ${roundedClasses[rounded]} 
+    ${className}
+  `.trim();
+</script>
+
+<div class={classes} {...restProps}>
+  <slot />
+</div>
+```
+
+### 2. Specialized Card Components
+```svelte
+<!-- src/lib/ui/FeatureCard.svelte -->
+<script lang="ts">
+  import BaseCard from './BaseCard.svelte';
+  import type { Feature } from '$lib/content/types';
+  
+  interface Props {
+    feature: Feature;
+    class?: string;
+  }
+  
+  let { feature, class: className = '' }: Props = $props();
+</script>
+
+<BaseCard 
+  variant="elevated" 
+  padding="lg" 
+  class="feature-card {className}"
+>
+  <div class="feature-icon mb-4">
+    <img src={feature.icon} alt={feature.title} class="w-12 h-12" />
+  </div>
+  
+  <h3 class="text-xl font-semibold mb-2">{feature.title}</h3>
+  <p class="text-gray-600 mb-4">{feature.description}</p>
+  
+  <ul class="feature-benefits space-y-1">
+    {#each feature.benefits as benefit}
+      <li class="flex items-center text-sm text-gray-700">
+        <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+        {benefit}
+      </li>
+    {/each}
+  </ul>
+</BaseCard>
+```
+
+## Content Management & Data Patterns
+
+### 1. Centralized Content Types
+```typescript
+// src/lib/content/types.ts
+export interface ContentSection {
+  id: string;
+  type: 'hero' | 'features' | 'testimonials' | 'pricing' | 'cta';
+  title?: string;
+  subtitle?: string;
+  content: any;
+  metadata?: Record<string, any>;
+}
+
+export interface HeroContent {
+  headline: string;
+  subheadline: string;
+  cta: {
+    primary: { text: string; href: string };
+    secondary?: { text: string; href: string };
+  };
+  background?: {
+    image?: string;
+    video?: string;
+    color?: string;
+  };
+}
+
+export interface FeatureContent {
+  title: string;
+  description: string;
+  features: Array<{
+    id: string;
+    title: string;
+    description: string;
+    icon: string;
+    benefits: string[];
+  }>;
+}
+```
+
+### 2. Content Factory Pattern
+```typescript
+// src/lib/content/factory.ts
+import type { ContentSection, HeroContent, FeatureContent } from './types';
+
+export class ContentFactory {
+  static createHero(content: HeroContent): ContentSection {
+    return {
+      id: 'hero',
+      type: 'hero',
+      title: content.headline,
+      subtitle: content.subheadline,
+      content,
+      metadata: {
+        priority: 'high',
+        aboveFold: true
+      }
+    };
+  }
+  
+  static createFeatures(content: FeatureContent): ContentSection {
+    return {
+      id: 'features',
+      type: 'features',
+      title: content.title,
+      subtitle: content.description,
+      content,
+      metadata: {
+        priority: 'high',
+        aboveFold: false
+      }
+    };
+  }
+  
+  static createSection(type: ContentSection['type'], data: any): ContentSection {
+    const factories = {
+      hero: this.createHero,
+      features: this.createFeatures,
+      // Add more factories as needed
+    };
+    
+    return factories[type](data);
+  }
+}
+```
+
+### 3. Content Configuration
+```typescript
+// src/lib/content/config.ts
+import { ContentFactory } from './factory';
+import type { ContentSection } from './types';
+
+export const landingPageContent: ContentSection[] = [
+  ContentFactory.createHero({
+    headline: "Transform Your Sales Process",
+    subheadline: "AI-powered insights that drive results",
+    cta: {
+      primary: { text: "Start Free Trial", href: "/signup" },
+      secondary: { text: "Watch Demo", href: "/demo" }
+    }
+  }),
+  
+  ContentFactory.createFeatures({
+    title: "Powerful Features",
+    description: "Everything you need to succeed",
+    features: [
+      {
+        id: "analytics",
+        title: "Advanced Analytics",
+        description: "Get deep insights into your sales performance",
+        icon: "/icons/analytics.svg",
+        benefits: ["Real-time tracking", "Custom dashboards", "Predictive insights"]
+      }
+      // More features...
+    ]
+  })
+];
+```
+
+## Utility Functions & Helpers
+
+### 1. Class Name Utilities
+```typescript
+// src/lib/utils/classnames.ts
+type ClassValue = string | number | boolean | undefined | null | ClassValue[] | Record<string, boolean>;
+
+export function cn(...inputs: ClassValue[]): string {
+  const classes: string[] = [];
+  
+  for (const input of inputs) {
+    if (typeof input === 'string' && input) {
+      classes.push(input);
+    } else if (typeof input === 'number' && input) {
+      classes.push(String(input));
+    } else if (Array.isArray(input)) {
+      const nested = cn(...input);
+      if (nested) classes.push(nested);
+    } else if (typeof input === 'object' && input !== null) {
+      for (const [key, value] of Object.entries(input)) {
+        if (value) classes.push(key);
+      }
+    }
+  }
+  
+  return classes.join(' ');
+}
+
+// Usage in components
+const buttonClasses = cn(
+  'px-4 py-2 rounded-md font-medium transition-colors',
+  {
+    'bg-blue-500 text-white hover:bg-blue-600': variant === 'primary',
+    'bg-gray-200 text-gray-900 hover:bg-gray-300': variant === 'secondary',
+    'opacity-50 cursor-not-allowed': disabled
+  },
+  className
+);
+```
+
+### 2. Validation Utilities
+```typescript
+// src/lib/utils/validation.ts
+export interface ValidationRule<T> {
+  validate: (value: T) => boolean;
+  message: string;
+}
+
+export class Validator<T> {
+  private rules: ValidationRule<T>[] = [];
+  
+  addRule(rule: ValidationRule<T>): this {
+    this.rules.push(rule);
+    return this;
+  }
+  
+  validate(value: T): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    for (const rule of this.rules) {
+      if (!rule.validate(value)) {
+        errors.push(rule.message);
+      }
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+}
+
+// Predefined validators
+export const emailValidator = new Validator<string>()
+  .addRule({
+    validate: (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+    message: 'Please enter a valid email address'
+  })
+  .addRule({
+    validate: (email) => email.length > 0,
+    message: 'Email is required'
+  });
+
+export const passwordValidator = new Validator<string>()
+  .addRule({
+    validate: (password) => password.length >= 8,
+    message: 'Password must be at least 8 characters'
+  })
+  .addRule({
+    validate: (password) => /[A-Z]/.test(password),
+    message: 'Password must contain at least one uppercase letter'
+  });
+```
+
+### 3. API Utilities
+```typescript
+// src/lib/utils/api.ts
+export interface ApiResponse<T> {
+  data: T;
+  success: boolean;
+  message?: string;
+  errors?: string[];
+}
+
+export class ApiClient {
+  private baseUrl: string;
+  
+  constructor(baseUrl: string = '') {
+    this.baseUrl = baseUrl;
+  }
+  
+  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`);
+      return await response.json();
+    } catch (error) {
+      return {
+        data: null as T,
+        success: false,
+        message: 'Network error occurred'
+      };
+    }
+  }
+  
+  async post<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (error) {
+      return {
+        data: null as T,
+        success: false,
+        message: 'Network error occurred'
+      };
+    }
+  }
+}
+
+// Global API client instance
+export const api = new ApiClient();
+```
+
+## State Management Patterns
+
+### 1. Global State Store
+```typescript
+// src/lib/store/app.ts
+interface AppState {
+  theme: 'light' | 'dark' | 'system';
+  user: User | null;
+  notifications: Notification[];
+  loading: Record<string, boolean>;
+}
+
+export const appState = $state<AppState>({
+  theme: 'system',
+  user: null,
+  notifications: [],
+  loading: {}
+});
+
+export function setTheme(theme: AppState['theme']) {
+  appState.theme = theme;
+  localStorage.setItem('theme', theme);
+}
+
+export function setUser(user: User | null) {
+  appState.user = user;
+}
+
+export function addNotification(notification: Notification) {
+  appState.notifications.push(notification);
+}
+
+export function setLoading(key: string, loading: boolean) {
+  appState.loading[key] = loading;
+}
+```
+
+### 2. Form State Management
+```typescript
+// src/lib/utils/form-state.ts
+export interface FormField<T> {
+  value: T;
+  error?: string;
+  touched: boolean;
+}
+
+export class FormState<T extends Record<string, any>> {
+  private state: Record<keyof T, FormField<any>>;
+  private validators: Partial<Record<keyof T, (value: any) => string | null>>;
+  
+  constructor(initialValues: T, validators?: Partial<Record<keyof T, (value: any) => string | null>>) {
+    this.validators = validators || {};
+    this.state = {} as Record<keyof T, FormField<any>>;
+    
+    for (const [key, value] of Object.entries(initialValues)) {
+      this.state[key as keyof T] = {
+        value,
+        error: undefined,
+        touched: false
+      };
+    }
+  }
+  
+  getField<K extends keyof T>(key: K): FormField<T[K]> {
+    return this.state[key];
+  }
+  
+  setValue<K extends keyof T>(key: K, value: T[K]) {
+    this.state[key].value = value;
+    this.state[key].touched = true;
+    this.validateField(key);
+  }
+  
+  validateField<K extends keyof T>(key: K): boolean {
+    const validator = this.validators[key];
+    if (validator) {
+      const error = validator(this.state[key].value);
+      this.state[key].error = error || undefined;
+      return !error;
+    }
+    return true;
+  }
+  
+  validateAll(): boolean {
+    let isValid = true;
+    for (const key of Object.keys(this.state) as (keyof T)[]) {
+      if (!this.validateField(key)) {
+        isValid = false;
+      }
+    }
+    return isValid;
+  }
+  
+  getValues(): T {
+    const values = {} as T;
+    for (const [key, field] of Object.entries(this.state)) {
+      values[key as keyof T] = field.value;
+    }
+    return values;
+  }
+  
+  getErrors(): Record<keyof T, string | undefined> {
+    const errors = {} as Record<keyof T, string | undefined>;
+    for (const [key, field] of Object.entries(this.state)) {
+      errors[key as keyof T] = field.error;
+    }
+    return errors;
+  }
+}
+```
+
+## Component Composition Patterns
+
+### 1. Higher-Order Components
+```svelte
+<!-- src/lib/components/withLoading.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  interface Props {
+    loading: boolean;
+    fallback?: any;
+  }
+  
+  let { loading, fallback }: Props = $props();
+</script>
+
+{#if loading}
+  {#if fallback}
+    {@render fallback()}
+  {:else}
+    <div class="loading-spinner">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  {/if}
+{:else}
+  <slot />
+{/if}
+```
+
+### 2. Render Props Pattern
+```svelte
+<!-- src/lib/components/DataProvider.svelte -->
+<script lang="ts">
+  interface Props<T> {
+    data: T | null;
+    loading: boolean;
+    error: string | null;
+    children: (props: { data: T | null; loading: boolean; error: string | null }) => any;
+  }
+  
+  let { data, loading, error, children }: Props<any> = $props();
+</script>
+
+{@render children({ data, loading, error })}
+```
+
+### 3. Compound Components
+```svelte
+<!-- src/lib/components/Modal.svelte -->
+<script lang="ts">
+  interface Props {
+    isOpen: boolean;
+    onClose: () => void;
+  }
+  
+  let { isOpen, onClose }: Props = $props();
+</script>
+
+{#if isOpen}
+  <div class="modal-overlay" on:click={onClose}>
+    <div class="modal-content" on:click|stopPropagation>
+      <slot />
+    </div>
+  </div>
+{/if}
+
+<!-- Modal.Header.svelte -->
+<script lang="ts">
+  // Header component logic
+</script>
+
+<div class="modal-header">
+  <slot />
+</div>
+
+<!-- Modal.Body.svelte -->
+<script lang="ts">
+  // Body component logic
+</script>
+
+<div class="modal-body">
+  <slot />
+</div>
+
+<!-- Modal.Footer.svelte -->
+<script lang="ts">
+  // Footer component logic
+</script>
+
+<div class="modal-footer">
+  <slot />
+</div>
+```
+
+## Configuration Management
+
+### 1. Environment Configuration
+```typescript
+// src/lib/config/environment.ts
+export const config = {
+  development: {
+    apiUrl: 'http://localhost:3000/api',
+    analytics: false,
+    debug: true
+  },
+  production: {
+    apiUrl: 'https://api.morr.ai',
+    analytics: true,
+    debug: false
+  }
+} as const;
+
+export function getConfig() {
+  const env = process.env.NODE_ENV as keyof typeof config;
+  return config[env] || config.development;
+}
+```
+
+### 2. Feature Flags
+```typescript
+// src/lib/config/features.ts
+export const features = {
+  darkMode: true,
+  analytics: true,
+  chatSupport: false,
+  betaFeatures: false
+} as const;
+
+export function isFeatureEnabled(feature: keyof typeof features): boolean {
+  return features[feature];
+}
+```
+
+## Error Handling Patterns
+
+### 1. Error Boundary
+```svelte
+<!-- src/lib/components/ErrorBoundary.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  let error: Error | null = $state(null);
+  let hasError = $state(false);
+  
+  onMount(() => {
+    const handleError = (event: ErrorEvent) => {
+      error = new Error(event.message);
+      hasError = true;
+    };
+    
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  });
+  
+  function reset() {
+    error = null;
+    hasError = false;
+  }
+</script>
+
+{#if hasError}
+  <div class="error-boundary">
+    <h2>Something went wrong</h2>
+    <p>{error?.message}</p>
+    <button on:click={reset}>Try Again</button>
+  </div>
+{:else}
+  <slot />
+{/if}
+```
+
+### 2. Async Error Handling
+```typescript
+// src/lib/utils/async.ts
+export async function withErrorHandling<T>(
+  asyncFn: () => Promise<T>,
+  fallback?: T
+): Promise<{ data: T | null; error: Error | null }> {
+  try {
+    const data = await asyncFn();
+    return { data, error: null };
+  } catch (error) {
+    console.error('Async operation failed:', error);
+    return { 
+      data: fallback || null, 
+      error: error instanceof Error ? error : new Error('Unknown error') 
+    };
+  }
+}
+```

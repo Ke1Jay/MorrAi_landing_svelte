@@ -1,0 +1,193 @@
+---
+alwaysApply: false
+---
+# SvelteKit Project Structure Guide
+
+This is a clean, production-ready SvelteKit structure for the Morr.ai marketing site, optimized for solo-dev flow in Cursor/Windsurf (predictable folders, small components, tokenized styling).
+
+## Project Structure
+
+```
+morr-ai-svelte/
+├─ package.json
+├─ svelte.config.js
+├─ vite.config.ts
+├─ tsconfig.json
+├─ .eslintrc.cjs           # optional, keeps code style consistent
+├─ .prettierrc             # optional
+├─ tailwind.config.ts      # optional, recommended for velocity
+├─ postcss.config.cjs      # if using Tailwind
+├─ static/                 # served as-is at site root
+│  ├─ favicon.ico
+│  ├─ robots.txt
+│  ├─ sitemap.xml
+│  └─ og.png
+└─ src/
+   ├─ app.html
+   ├─ app.d.ts
+   ├─ hooks.server.ts      # e.g., security headers, analytics cookies (optional)
+   ├─ lib/
+   │  ├─ styles/
+   │  │  ├─ tokens.css     # design tokens as CSS vars (colors, typography, spacing)
+   │  │  ├─ tokens.ts      # typed mirror of tokens.css for component imports
+   │  │  └─ globals.css    # Tailwind base/resets or vanilla global styles
+   │  ├─ ui/               # small, generic building blocks (atoms)
+   │  │  ├─ Button.svelte
+   │  │  ├─ Badge.svelte
+   │  │  ├─ Card.svelte
+   │  │  ├─ Input.svelte
+   │  │  ├─ Tabs.svelte
+   │  │  └─ Section.svelte # standard container (max-width, padding, bg hooks)
+   │  ├─ sections/         # page "slices" (compose these to build pages)
+   │  │  ├─ Hero.svelte
+   │  │  ├─ Trustbar.svelte
+   │  │  ├─ SalesOutcomes.svelte
+   │  │  ├─ DecisionSupport.svelte
+   │  │  ├─ Knowledge.svelte
+   │  │  ├─ Workflow.svelte
+   │  │  ├─ KeyFeatures.svelte
+   │  │  ├─ ProactiveInsights.svelte
+   │  │  ├─ Integrations.svelte
+   │  │  ├─ PricingTable.svelte
+   │  │  └─ CTA.svelte
+   │  ├─ icons/            # inline SVGs as components (Slack, Notion, etc.)
+   │  ├─ assets/           # imported assets handled by Vite (png/svg/webp)
+   │  ├─ content/          # data-only modules (no UI)
+   │  │  ├─ nav.ts
+   │  │  ├─ pricing.ts
+   │  │  ├─ features.ts
+   │  │  └─ integrations.ts
+   │  ├─ store/            # tiny app state (no global libs needed)
+   │  │  ├─ theme.ts       # dark/light, system preference
+   │  │  └─ billingCycle.ts# monthly/yearly toggle
+   │  └─ utils/
+   │     ├─ classnames.ts  # clsx-tailwind helper
+   │     ├─ format.ts      # formatPrice, truncate, etc.
+   │     └─ seo.ts         # helpers for meta/OG/JSON-LD
+   └─ routes/
+      ├─ +layout.svelte    # header/footer shell, imports globals.css/tokens.css
+      ├─ +layout.ts        # load site-wide config, theme, A/B flags (optional)
+      ├─ +page.svelte      # "/" Home: compose sections from src/lib/sections
+      ├─ pricing/
+      │  └─ +page.svelte
+      ├─ product/
+      │  ├─ tour/+page.svelte
+      │  ├─ how-it-works/+page.svelte
+      │  ├─ features/+page.svelte
+      │  └─ integrations/+page.svelte
+      ├─ solutions/
+      │  ├─ sales-teams/+page.svelte
+      │  ├─ product-ops/+page.svelte
+      │  ├─ leadership/+page.svelte
+      │  └─ startups/+page.svelte
+      ├─ company/
+      │  ├─ about/+page.svelte
+      │  ├─ careers/+page.svelte
+      │  ├─ blog/+page.svelte        # list
+      │  └─ blog/[slug]/+page.svelte # detail (MD/MDX or content module)
+      ├─ contact/+page.svelte
+      └─ legal/
+         ├─ privacy/+page.svelte
+         ├─ terms/+page.svelte
+         ├─ security/+page.svelte
+         └─ gdpr/+page.svelte
+```
+
+## Why This Structure Works (and Scales)
+
+### Route Files Stay Tiny
+Each page ([+page.svelte](mdc:src/routes/+page.svelte)) only composes section components (from [src/lib/sections](mdc:src/lib/sections)). This keeps pages declarative and dead simple to diff, review, or reorder.
+
+### Sections vs UI: Clear Separation of Concerns
+- `lib/sections/*` = marketing "slices" tied to copy/imagery (e.g., Hero, PricingTable)
+- `lib/ui/*` = small, reusable primitives (Button, Card, Tabs)
+
+Result: you can reuse UI across sections/pages without leaking marketing logic into primitives.
+
+### Design Tokens Up Front → Painless Restyling
+[tokens.css](mdc:src/lib/styles/tokens.css) (CSS variables) + [tokens.ts](mdc:src/lib/styles/tokens.ts) (typed mirror) make color/typography changes global and safe. You can reference tokens in Tailwind via theme.extend or plain CSS variables in components. One place to change brand color = all components update.
+
+### Content is Data, Not JSX/Svelte Markup
+Things like nav links, plan tiers, feature lists live in [lib/content/*.ts](mdc:src/lib/content). Benefits:
+- build stubs fast, swap copy later without touching components
+- easier A/B experiments (swap a data module)
+- safer unit tests (data is pure)
+
+### Icons as Svelte Components
+Inline SVGs in [lib/icons](mdc:src/lib/icons) render fast, style via currentColor, and avoid layout shifts from external icon fonts.
+
+### State is Tiny and Local
+Only cross-page state (theme, pricing billing cycle) goes in [lib/store](mdc:src/lib/store). Everything else stays inside sections, keeping mental load low.
+
+### Static vs Bundled Assets are Explicit
+- `static/` → served 1:1 at / (favicons, og images, robots.txt, sitemap)
+- `lib/assets/` → imported by components and optimized by Vite (hashing, tree-shaking)
+
+This keeps network behavior predictable and Lighthouse happy.
+
+### Great SSR/SEO Defaults, No Extra Work
+SvelteKit SSR + [routes/+layout.svelte](mdc:src/routes/+layout.svelte) gives semantic landmarks (header/main/footer) once. Add `<svelte:head>` per page for unique meta tags; use [lib/utils/seo.ts](mdc:src/lib/utils/seo.ts) to DRY them up.
+
+### Cursor/Windsurf Friendly
+Predictable naming and small files let AI actions insert or modify sections without trampling unrelated code. New pages = new folders with +page.svelte—zero boilerplate.
+
+### Future-proof
+- Blog route already supports [slug] if you want MD/MDX later
+- Route groups (e.g., (marketing)) are easy to add if you split areas
+- Server endpoints (e.g., /routes/api/subscribe/+server.ts) can be added later without changing structure
+
+## How Pages Compose Sections
+
+### Home Page Example
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+  import Hero from '$lib/sections/Hero.svelte';
+  import Trustbar from '$lib/sections/Trustbar.svelte';
+  import SalesOutcomes from '$lib/sections/SalesOutcomes.svelte';
+  import DecisionSupport from '$lib/sections/DecisionSupport.svelte';
+  import Knowledge from '$lib/sections/Knowledge.svelte';
+  import Workflow from '$lib/sections/Workflow.svelte';
+  import KeyFeatures from '$lib/sections/KeyFeatures.svelte';
+  import ProactiveInsights from '$lib/sections/ProactiveInsights.svelte';
+  import Integrations from '$lib/sections/Integrations.svelte';
+  import CTA from '$lib/sections/CTA.svelte';
+</script>
+
+<Hero />
+<Trustbar />
+<SalesOutcomes />
+<DecisionSupport />
+<Knowledge />
+<Workflow />
+<KeyFeatures />
+<ProactiveInsights />
+<Integrations />
+<CTA />
+```
+
+### Layout Owns Global Chrome & Tokens
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+  import '$lib/styles/globals.css';
+  import '$lib/styles/tokens.css';
+  import Footer from '$lib/sections/Footer.svelte';
+  import { theme } from '$lib/store/theme';
+</script>
+
+<div class={$theme}>  <!-- e.g., adds .dark or .light -->
+  <header>/* Header/Nav using $lib/content/nav.ts */</header>
+  <main><slot /></main>
+  <Footer />
+</div>
+```
+
+## Key Principles
+
+1. **Component Composition**: Pages are composed of sections, sections use UI primitives
+2. **Design Tokens**: Centralized styling through CSS variables and TypeScript mirrors
+3. **Content Separation**: Data lives in content modules, not in components
+4. **Asset Organization**: Static vs bundled assets are clearly separated
+5. **State Management**: Minimal global state, local state in components
+6. **SEO/SSR**: Built-in SvelteKit features with semantic HTML structure

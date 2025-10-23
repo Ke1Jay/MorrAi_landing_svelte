@@ -1,0 +1,252 @@
+---
+alwaysApply: false
+---
+# SvelteKit Landing Page Architecture
+
+## Component Hierarchy & Organization
+
+### 1. Page Composition Pattern
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+  import Hero from '$lib/sections/Hero.svelte';
+  import Features from '$lib/sections/Features.svelte';
+  import Pricing from '$lib/sections/Pricing.svelte';
+  import CTA from '$lib/sections/CTA.svelte';
+</script>
+
+<Hero />
+<Features />
+<Pricing />
+<CTA />
+```
+
+### 2. Section Components (Marketing Slices)
+- **Purpose**: Complete marketing sections with copy, imagery, and layout
+- **Location**: `src/lib/sections/`
+- **Naming**: PascalCase descriptive names (Hero, Features, Pricing, Testimonials)
+- **Structure**: Self-contained with internal state, no external dependencies
+
+### 3. UI Primitives (Reusable Components)
+- **Purpose**: Small, generic building blocks
+- **Location**: `src/lib/ui/`
+- **Naming**: PascalCase (Button, Card, Input, Modal)
+- **Props**: Well-typed interfaces, no business logic
+
+### 4. Layout Components
+- **Header**: `src/lib/sections/Header.svelte`
+- **Footer**: `src/lib/sections/Footer.svelte`
+- **Navigation**: `src/lib/components/Navigation.svelte`
+
+## File Structure Best Practices
+
+```
+src/lib/
+├── sections/          # Marketing sections (Hero, Features, etc.)
+├── ui/               # Reusable UI primitives
+├── components/       # Complex components (Navigation, Forms)
+├── icons/           # SVG icon components
+├── styles/          # Design tokens and global styles
+├── content/         # Data modules (no UI)
+├── store/           # Global state management
+└── utils/           # Helper functions
+```
+
+## Component Design Principles
+
+### 1. Single Responsibility
+Each component should have one clear purpose:
+- **Sections**: Complete marketing blocks
+- **UI**: Generic, reusable elements
+- **Components**: Complex functionality
+
+### 2. Props Interface Design
+```typescript
+// Good: Specific, well-typed props
+interface ButtonProps {
+  variant: 'primary' | 'secondary' | 'ghost';
+  size: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  onClick?: () => void;
+}
+
+// Avoid: Generic or overly flexible props
+interface BadButtonProps {
+  [key: string]: any;
+}
+```
+
+### 3. State Management Strategy
+- **Local State**: Use `$state()` for component-specific state
+- **Global State**: Only for cross-component communication
+- **URL State**: Use SvelteKit's built-in routing for page state
+
+## Performance Optimization
+
+### 1. Lazy Loading
+```svelte
+<script>
+  import { onMount } from 'svelte';
+  
+  let LazyComponent;
+  
+  onMount(async () => {
+    const module = await import('$lib/sections/HeavySection.svelte');
+    LazyComponent = module.default;
+  });
+</script>
+
+{#if LazyComponent}
+  <svelte:component this={LazyComponent} />
+{/if}
+```
+
+### 2. Image Optimization
+```svelte
+<script>
+  import { browser } from '$app/environment';
+  import { onMount } from 'svelte';
+  
+  let imageLoaded = false;
+  
+  onMount(() => {
+    if (browser) {
+      // Lazy load images
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            imageLoaded = true;
+            observer.disconnect();
+          }
+        });
+      });
+      
+      observer.observe(document.querySelector('.lazy-image'));
+    }
+  });
+</script>
+```
+
+## SEO & Meta Management
+
+### 1. Page-Level SEO
+```svelte
+<!-- src/routes/+page.svelte -->
+<svelte:head>
+  <title>Morr.ai - AI-Powered Sales Intelligence</title>
+  <meta name="description" content="Transform your sales process with AI-driven insights and automation." />
+  <meta property="og:title" content="Morr.ai - AI-Powered Sales Intelligence" />
+  <meta property="og:description" content="Transform your sales process with AI-driven insights and automation." />
+  <meta property="og:image" content="/og-image.jpg" />
+  <link rel="canonical" href="https://morr.ai" />
+</svelte:head>
+```
+
+### 2. Structured Data
+```svelte
+<script>
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Morr.ai",
+    "description": "AI-Powered Sales Intelligence Platform"
+  };
+</script>
+
+<svelte:head>
+  <script type="application/ld+json">
+    {JSON.stringify(structuredData)}
+  </script>
+</svelte:head>
+```
+
+## Accessibility Standards
+
+### 1. Semantic HTML
+```svelte
+<main>
+  <section aria-labelledby="hero-heading">
+    <h1 id="hero-heading">Transform Your Sales Process</h1>
+    <p>AI-powered insights that drive results</p>
+  </section>
+</main>
+```
+
+### 2. Keyboard Navigation
+```svelte
+<script>
+  import { createEventDispatcher } from 'svelte';
+  
+  const dispatch = createEventDispatcher();
+  
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      dispatch('click');
+    }
+  }
+</script>
+
+<button 
+  on:keydown={handleKeydown}
+  on:click
+  role="button"
+  tabindex="0"
+>
+  Click me
+</button>
+```
+
+## Error Handling & Loading States
+
+### 1. Error Boundaries
+```svelte
+<!-- src/lib/components/ErrorBoundary.svelte -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  let error: Error | null = null;
+  
+  onMount(() => {
+    window.addEventListener('error', (event) => {
+      error = event.error;
+    });
+  });
+</script>
+
+{#if error}
+  <div class="error-fallback">
+    <h2>Something went wrong</h2>
+    <p>{error.message}</p>
+    <button on:click={() => window.location.reload()}>
+      Reload Page
+    </button>
+  </div>
+{:else}
+  <slot />
+{/if}
+```
+
+### 2. Loading States
+```svelte
+<script>
+  let loading = true;
+  let data = null;
+  
+  async function loadData() {
+    try {
+      loading = true;
+      const response = await fetch('/api/data');
+      data = await response.json();
+    } finally {
+      loading = false;
+    }
+  }
+</script>
+
+{#if loading}
+  <div class="loading-spinner">Loading...</div>
+{:else if data}
+  <!-- Render data -->
+{/if}
+```
